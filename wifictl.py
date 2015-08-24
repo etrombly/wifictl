@@ -7,13 +7,54 @@ class Interface():
     def __init__(self, name, IEEEtype = None, essid = None):
         self.name = name
         self.IEEEtype = IEEEtype
+        self.state = None
+        self.checkState()
         if essid == "off/any":
             self.essid = None
         else:
             self.essid = essid
-    
+
     def __repr__(self):
         return self.name
+
+    def checkState(self):
+        out = subprocess.check_output(["ip", "link", "show", self.name])
+        out = out.decode('utf-8')
+        if "DOWN" in out:
+            self.state = False
+        else:
+            self.state = True
+
+    def setUp(self):
+        subprocess.call(["ip", "link", "set", self.name, "up"])
+
+    def scan(self):
+        try:
+            out = subprocess.check_output(["iwlist", self.name, "scanning"])
+            out = out.decode('utf-8')
+            for cell in out.split("          Cell ")[1:]:
+                for line in cell.split("\n"):
+                    if "ESSID" in line:
+                        essid = line.split(":")[1].strip('"')
+                print(essid)
+        except subprocess.CalledProcessError:
+            print("could not scan", self.name)
+
+    def findCFG(self):
+        networkFile = "/etc/systemd/network/%s.network" % self.name
+        wpaFile = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % self.name
+        if not os.path.exists(networkFile):
+            print("network config for %s does not exist, creating" % (self.name))
+        if not os.path.exists(wpaFile):
+            print("wpa_supplicant config for %s does not exist" % (self.name))
+
+    def createNetworkCFG(self):
+        with open("/etc/systemd/network/%s.network" % self.name, "r+") as networkFile:
+            pass
+
+    def createWPACFG(self):
+        with open("/etc/wpa_supplicant/wpa_supplicant-%s.conf" % self.name, "r+") as wpaFile:
+            pass
 
 class AP():
     def __init__(self, name):
@@ -34,30 +75,12 @@ def findIF(interfaces):
                         essid = " ".join(split[3:]).replace("ESSID:", "").strip('"')
                         interfaces.append(Interface(name, IEEEtype, essid))
 
-def findCFG(interface):
-    networkFile = "/etc/systemd/network/%s.network" % interface
-    wpaFile = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % interface
-    if not os.path.exists(networkFile):
-        print("network config for %s does not exist, creating" % (interface))
-    if not os.path.exists(wpaFile):
-        print("wpa_supplicant config for %s does not exist" % (interface))
-
-def createNetworkCFG(interface):
-    with open("/etc/systemd/network/%s.network" % interface, "r+") as networkFile:
-        pass
-
-def createWPACFG(interface):
-    with open("/etc/wpa_supplicant/wpa_supplicant-%s.conf" % interface, "r+") as wpaFile:
-        pass
-
-def scan(interface):
-    out = subprocess.check_output(["iwlist", interface.name, "scanning"])
-    print(out)
-
 if __name__ == "__main__":
     interfaces = []
     findIF(interfaces)
     for interface in interfaces:
         print("found interface", interface)
-        findCFG(interface)
-        scan(interface)
+        #interface.findCFG()
+        if not interface.state:
+            interface.setUp()
+        interface.scan()
