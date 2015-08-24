@@ -1,0 +1,2 @@
+# wifictl
+networkd wifi gui
