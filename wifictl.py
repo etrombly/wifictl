@@ -29,18 +29,20 @@ class Interface():
         subprocess.call(["ip", "link", "set", self.name, "up"])
 
     def scan(self):
+        aps = []
         try:
-            out = subprocess.check_output(["iwlist", self.name, "scanning"])
+            out = subprocess.check_output(["iwlist", self.name, "scan"])
             out = out.decode('utf-8')
             for cell in out.split("          Cell ")[1:]:
                 for line in cell.split("\n"):
                     if "ESSID" in line:
                         essid = line.split(":")[1].strip('"')
-                print(essid)
+                aps.append(AP(essid))
         except subprocess.CalledProcessError:
             print("could not scan", self.name)
+        return aps
 
-    def findCFG(self):
+    def loadCFG(self):
         networkFile = "/etc/systemd/network/%s.network" % self.name
         wpaFile = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % self.name
         if not os.path.exists(networkFile):
@@ -60,27 +62,36 @@ class AP():
     def __init__(self, name):
         self.name = name
 
-def findIF(interfaces):
+    def __repr__(self):
+        return self.name
+
+def findIF():
     out = subprocess.check_output(["iwconfig"], stderr = open("/dev/null"))
     out = out.decode('utf-8')
-    inters = out.split('\n\n')
-    for inter in inters:
-        if inter:
-            for line in inter.split("\n"):
-                if not line.startswith(" "):
-                    split = line.split()
-                    if split:
-                        name = split[0]
-                        IEEEtype = split[2]
-                        essid = " ".join(split[3:]).replace("ESSID:", "").strip('"')
-                        interfaces.append(Interface(name, IEEEtype, essid))
+    result = []
+    interfaces = out.split('\n\n')
+    interfaces = [x for x in interfaces if x]
+    for interface in interfaces:
+        for line in interface.split("\n"):
+            if not line.startswith(" "):
+                name = line.split()[0]
+                try:
+                    IEEEtype = line.split("IEEE ")[1].split()[0]
+                except IndexError:
+                    IEEEtype = None
+                try:
+                    essid = line.split('ESSID:"')[1].split('"')[0]
+                except IndexError:
+                    essid = None
+                result.append(Interface(name, IEEEtype, essid))
+    return result
 
 if __name__ == "__main__":
-    interfaces = []
-    findIF(interfaces)
+    interfaces = findIF()
     for interface in interfaces:
         print("found interface", interface)
-        #interface.findCFG()
+        #interface.loadCFG()
         if not interface.state:
             interface.setUp()
-        interface.scan()
+        aps = interface.scan()
+        print(aps)
