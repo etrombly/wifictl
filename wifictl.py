@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#grabbed db2dbm and quality regexs from https://github.com/rockymeza/wifi
 
 import subprocess
 import configparser
@@ -18,6 +19,9 @@ class Interface():
         self.networkConfig = configparser.ConfigParser()
         self.networkConfig.optionxform=str
         self.networks = []
+        self.qualityPatterns = {'dBm': re.compile(r'Quality=(\d+/\d+).*Signal level=(-\d+) dBm'),
+                   'relative': re.compile(r'Quality=(\d+/\d+).*Signal level=(\d+/\d+)'),
+                   'absolute': re.compile(r'Quality:(\d+).*Signal level:(\d+)')}
 
     def __repr__(self):
         return self.name
@@ -45,17 +49,26 @@ class Interface():
         return aps
     
     def parseCell(self, cell):
+        
         for line in cell.splitlines():
             if "ESSID" in line:
                 essid = line.split(":")[1].strip('"')
             elif "Protocol" in line:
                 protocol = line.split(":")[1].replace("IEEE ", "")
             elif "Quality" in line:
-                pattern = re.compile('Quality=(\d{1,3})/(\d{1,3})\s*Signal level=(\d{1,3})/(\d{1,3})')
-                match = pattern.findall(line)
-                if match:
-                    quality = (int(match[0][0]) / int(match[0][1])) * 100
-                    signal = (int(match[0][2]) / int(match[0][3])) * 100
+                for re_name, quality_re in self.qualityPatterns.items():
+                    match_result = quality_re.search(line)
+                    if match_result is not None:
+                        quality, signal = match_result.groups()
+                        if re_name == 'relative':
+                            actual, total = map(int, signal.split('/'))
+                            signal = self.db2dbm(int((actual / total) * 100))
+                        elif re_name == 'absolute':
+                            quality = quality + '/100'
+                            signal = self.db2dbm(int(signal))
+                        else:
+                            signal = int(signal)
+                        break
         return essid, protocol, quality, signal
                             
     def loadCFG(self):
@@ -120,6 +133,14 @@ class Interface():
                         essid = None
                     result.append(Interface(name, IEEEtype, essid))
         return result
+    
+    def db2dbm(self, quality):
+        """
+        Converts the Radio (Received) Signal Strength Indicator (in db) to a dBm
+        value.  Please see http://stackoverflow.com/a/15798024/1013960
+        """
+        dbm = int((quality / 2) - 100)
+        return min(max(dbm, -100), -50)
 
 class AP():
     def __init__(self, name, protocol, quality, signal):
@@ -129,7 +150,7 @@ class AP():
         self.signal = signal
 
     def __repr__(self):
-        return "ESSID: %s PROTO: %s SIG: %i%%" % (self.name, self.protocol, self.signal)
+        return "ESSID: %s PROTO: %s SIG: %i dBm" % (self.name, self.protocol, self.signal)
 
 class Network():
     def __init__(self, ssid, psk):
