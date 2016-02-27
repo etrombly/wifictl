@@ -22,6 +22,7 @@ class Interface():
         self.qualityPatterns = {'dBm': re.compile(r'Quality=(\d+/\d+).*Signal level=(-\d+) dBm'),
                    'relative': re.compile(r'Quality=(\d+/\d+).*Signal level=(\d+/\d+)'),
                    'absolute': re.compile(r'Quality:(\d+).*Signal level:(\d+)')}
+        self.network_re = re.compile("^network\=\{\s*(.*?)\}", re.DOTALL | re.MULTILINE)
 
     def __repr__(self):
         return self.name
@@ -49,7 +50,7 @@ class Interface():
         return aps
     
     def parseCell(self, cell):
-        
+        protocol = ""
         for line in cell.splitlines():
             if "ESSID" in line:
                 essid = line.split(":")[1].strip('"')
@@ -75,13 +76,13 @@ class Interface():
         networkFile = "/etc/systemd/network/%s.network" % self.name
         wpaFile = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % self.name
         try:
-            self.networkConfig.readfp(open(networkFile))
+            self.networkConfig.read_file(open(networkFile))
         except FileNotFoundError:
             print("network config for %s does not exist, creating" % (self.name))
             self.writeNetworkCFG()
         try:
             with open(wpaFile) as wpaConfig:
-                networks = wpaConfig.read().split("network={\n")[1:]
+                networks = self.network_re.findall(wpaConfig.read())
             self.networks = []
             for network in networks:
                 self.networks.append(Network(*self.parseNetwork(network)))
