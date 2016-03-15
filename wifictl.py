@@ -3,8 +3,9 @@
 
 import subprocess
 import configparser
-import os
 import re
+import sys
+from PyQt5 import QtGui, QtWidgets
 
 class Interface():
     def __init__(self, name, IEEEtype = None, essid = None):
@@ -29,8 +30,7 @@ class Interface():
 
     def checkState(self):
         out = subprocess.check_output(["ip", "link", "show", self.name])
-        out = out.decode('utf-8')
-        if "DOWN" in out:
+        if b'DOWN' in out:
             self.state = False
         else:
             self.state = True
@@ -161,6 +161,42 @@ class Network():
     def __repr__(self):
         return "ssid: %s" % (self.ssid)
 
+class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
+
+    def __init__(self, icon, aps, parent=None):
+        QtWidgets.QSystemTrayIcon.__init__(self, icon, parent)
+        menu = QtWidgets.QMenu(parent)
+        apList = []
+        for ap in aps:
+            if(ap.signal >-50):
+                icon = QtGui.QIcon.fromTheme("network-wireless-connected-100")
+            elif(ap.signal >-60):
+                icon = QtGui.QIcon.fromTheme("network-wireless-connected-75")
+            elif(ap.signal >-70):
+                icon = QtGui.QIcon.fromTheme("network-wireless-connected-50")
+            elif(ap.signal >-80):
+                icon = QtGui.QIcon.fromTheme("network-wireless-connected-25")
+            else:
+                icon = QtGui.QIcon.fromTheme("network-wireless-connected-00")
+            apList.append(menu.addAction(icon, ap.name))
+            apList[-1].triggered.connect(self.popup)
+        exitAction = menu.addAction("Exit")
+        exitAction.triggered.connect(QtWidgets.qApp.quit)
+        self.setContextMenu(menu)
+
+    def popup(self):
+        sender = self.sender()
+        print(sender.text())
+
+def main(aps):
+    app = QtWidgets.QApplication(sys.argv)
+
+    w = QtWidgets.QWidget()
+    trayIcon = SystemTrayIcon(QtGui.QIcon.fromTheme("network-wireless"), aps, w)
+
+    trayIcon.show()
+    sys.exit(app.exec_())
+
 if __name__ == "__main__":
     interfaces = Interface.findIF()
     for interface in interfaces:
@@ -175,3 +211,4 @@ if __name__ == "__main__":
         print("scanned access points")
         for ap in aps:
             print("\t", ap)
+    main(aps)
